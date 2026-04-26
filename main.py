@@ -1,5 +1,6 @@
-import yfinance as yf
-import pandas as pd
+from data.fetch_data import fetch_stock_data, get_stock_list
+from data.db import save_to_db
+from data.loader import load_stock
 
 from strategy.indicators.indicators import add_indicators
 from strategy.signals.signals import generate_signals
@@ -10,20 +11,65 @@ from execution.executor import execute_trade
 from logs.logger import log_decision
 
 
-def run(symbol="RELIANCE.NS"):
-    print(f"Fetching data for {symbol}...")
+def choose_stock():
+    print("\nChoose stock category:")
+    print("1. NIFTY 50")
+    print("2. NSE stocks not in NIFTY 50")
+    print("3. BSE stocks from CSV")
 
-    df = yf.download(symbol, period="6mo", interval="1d")
+    category = input("\nEnter category number: ").strip()
 
-    # Fix multi-index issue
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+    stock_list = get_stock_list(category)
 
-    if df.empty:
-        print("No data fetched. Check symbol or internet.")
+    if not stock_list:
+        print("No stocks found for this category.")
+        return None
+
+    print("\nAvailable stocks:")
+    for i, symbol in enumerate(stock_list, start=1):
+        print(f"{i}. {symbol}")
+
+    choice = input("\nEnter stock number or exact symbol: ").strip().upper()
+
+    if choice.isdigit():
+        index = int(choice) - 1
+
+        if index < 0 or index >= len(stock_list):
+            print("Invalid stock number.")
+            return None
+
+        return stock_list[index]
+
+    if category in ["1", "2"] and not choice.endswith(".NS"):
+        choice += ".NS"
+
+    if category == "3" and not choice.endswith(".BO"):
+        choice += ".BO"
+
+    return choice
+
+
+def run_strategy(symbol):
+    print(f"\nSelected stock: {symbol}")
+
+    df = fetch_stock_data(symbol, period="2mo", interval="1d")
+
+    if df is None:
+        print("Cannot run strategy because data was not fetched.")
         return
 
-    print("Adding indicators...")
+    save_to_db(symbol, df)
+
+    df = load_stock(symbol)
+
+    if df.empty:
+        print("No data found in MongoDB after saving.")
+        return
+
+    print("\nPast 2 months data:")
+    print(df.tail(10))
+
+    print("\nAdding indicators...")
     df = add_indicators(df)
 
     print("Generating signals...")
@@ -32,7 +78,6 @@ def run(symbol="RELIANCE.NS"):
     print("Calculating score...")
     df = calculate_score(df)
 
-    # --- DECISION FUNCTION ---
     def decision(score):
         if score > 0.5:
             return "BUY"
@@ -41,22 +86,15 @@ def run(symbol="RELIANCE.NS"):
         else:
             return "HOLD"
 
-    df['decision'] = df['score'].apply(decision)
+    df["decision"] = df["score"].apply(decision)
 
     print("\nLatest Signals:")
-    print(df[['Close', 'score', 'decision']].tail())
+    print(df[["Date", "Close", "score", "decision"]].tail())
 
-    # =========================
-    # 🔵 LOG LATEST DECISION
-    # =========================
     latest_row = df.iloc[-1]
     log_decision(latest_row)
 
-    # =========================
-    # 🔵 BACKTEST
-    # =========================
     print("\nRunning Backtest...")
-
     final_capital, total_profit, trades = backtest(df)
 
     print("\nBacktest Results:")
@@ -64,23 +102,12 @@ def run(symbol="RELIANCE.NS"):
     print("Total Profit:", total_profit)
     print("Number of Trades:", len(trades))
 
-    print("\nSample Trades:")
-    for trade in trades[:5]:
-        print(trade)
-
-    # =========================
-    # 🔵 EXECUTION (LIVE DECISION)
-    # =========================
     print("\nExecuting latest trade...")
-
-    decision_value = latest_row['decision']
-    price = latest_row['Close']
-
-    capital = 100000  # You can later make this dynamic
-    quantity = capital // price
-
-    execute_trade(symbol, decision_value, quantity, price)
+    execute_trade(symbol, latest_row["decision"], latest_row["Close"])
 
 
 if __name__ == "__main__":
-    run()
+    selected_symbol = choose_stock()
+
+    if selected_symbol:
+        run_strategy(selected_symbol)1
