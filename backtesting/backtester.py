@@ -1,5 +1,6 @@
 import pandas as pd
 from risk.stop_loss import calculate_stop_loss
+from risk.position_size import calculate_position_size
 
 
 def backtest(data, initial_capital=100000):
@@ -24,7 +25,8 @@ def backtest(data, initial_capital=100000):
         price = row['Close']
 
         if decision == "BUY" and position == 0:
-            quantity = capital // price
+            stop_loss_price = calculate_stop_loss(price, "BUY", 0.02)
+            quantity = calculate_position_size(capital, 0.02, price, stop_loss_price)
 
             if quantity > 0:
                 buy_price = price
@@ -40,7 +42,7 @@ def backtest(data, initial_capital=100000):
                 })
 
         if position > 0:
-            stop_loss = calculate_stop_loss(buy_price, "BUY", 0.03)
+            stop_loss = calculate_stop_loss(buy_price, "BUY", 0.02)
             target = buy_price * 1.05
 
             if price < stop_loss:

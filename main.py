@@ -18,7 +18,6 @@ def choose_stock():
     print("3. BSE stocks from CSV")
 
     category = input("\nEnter category number: ").strip()
-
     stock_list = get_stock_list(category)
 
     if not stock_list:
@@ -33,29 +32,35 @@ def choose_stock():
 
     if choice.isdigit():
         index = int(choice) - 1
-
         if index < 0 or index >= len(stock_list):
             print("Invalid stock number.")
             return None
-
         return stock_list[index]
 
     if category in ["1", "2"] and not choice.endswith(".NS"):
         choice += ".NS"
-
     if category == "3" and not choice.endswith(".BO"):
         choice += ".BO"
 
     return choice
 
 
+def decision_label(score):
+    if score > 0.3:
+        return "BUY"
+    elif score < -0.3:
+        return "SELL"
+    else:
+        return "HOLD"
+
+
 def run_strategy(symbol):
     print(f"\nSelected stock: {symbol}")
 
-    df = fetch_stock_data(symbol, period="2mo", interval="1d")
-
+    # in fetch_data __main__, change period
+    df = fetch_stock_data(symbol, period="2y", interval="1d")
     if df is None:
-        print("Cannot run strategy because data was not fetched.")
+        print("Cannot run strategy — data fetch failed.")
         return
 
     save_to_db(symbol, df)
@@ -63,7 +68,7 @@ def run_strategy(symbol):
     df = load_stock(symbol)
 
     if df.empty:
-        print("No data found in MongoDB after saving.")
+        print("No data in MongoDB after saving.")
         return
 
     print("\nPast 2 months data:")
@@ -78,15 +83,7 @@ def run_strategy(symbol):
     print("Calculating score...")
     df = calculate_score(df)
 
-    def decision(score):
-        if score > 0.5:
-            return "BUY"
-        elif score < -0.5:
-            return "SELL"
-        else:
-            return "HOLD"
-
-    df["decision"] = df["score"].apply(decision)
+    df["decision"] = df["score"].apply(decision_label)
 
     print("\nLatest Signals:")
     print(df[["Date", "Close", "score", "decision"]].tail())
@@ -98,9 +95,9 @@ def run_strategy(symbol):
     final_capital, total_profit, trades = backtest(df)
 
     print("\nBacktest Results:")
-    print("Final Capital:", final_capital)
-    print("Total Profit:", total_profit)
-    print("Number of Trades:", len(trades))
+    print(f"Final Capital:    {final_capital:.2f}")
+    print(f"Total Profit:     {total_profit:.2f}")
+    print(f"Number of Trades: {len(trades)}")
 
     print("\nExecuting latest trade...")
     execute_trade(symbol, latest_row["decision"], latest_row["Close"])
@@ -108,6 +105,5 @@ def run_strategy(symbol):
 
 if __name__ == "__main__":
     selected_symbol = choose_stock()
-
     if selected_symbol:
-        run_strategy(selected_symbol)1
+        run_strategy(selected_symbol)

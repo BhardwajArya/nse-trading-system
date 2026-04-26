@@ -75,3 +75,14 @@ def get_stock_list(category):
         return bse_stocks
 
     return []
+if __name__ == "__main__":
+    from data.db import save_to_db
+
+    all_symbols = NIFTY_50 + EXTRA_NSE
+
+    for symbol in all_symbols:
+        df = fetch_stock_data(symbol, period="2y", interval="1d")
+        if df is not None:
+            save_to_db(symbol, df)
+
+    print("\nAll stocks fetched and saved to MongoDB.")
